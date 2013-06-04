@@ -19,11 +19,14 @@
 package com.volosyukivan;
 
 import java.io.IOException;
+import java.net.Inet6Address;
 import java.net.InetAddress;
 import java.net.NetworkInterface;
 import java.net.SocketException;
 import java.nio.channels.ServerSocketChannel;
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Comparator;
 import java.util.Enumeration;
 
 import com.volosyukivan.PortUpdateListener.Stub;
@@ -46,17 +49,23 @@ public class WiFiKeyboard extends Activity {
     
     public static ArrayList<String> getNetworkAddresses() {
       ArrayList<String> addrs = new ArrayList<String>();
+      ArrayList<InetAddress> addresses = new ArrayList<InetAddress>();
       try {
         Enumeration<NetworkInterface> ifaces =
           NetworkInterface.getNetworkInterfaces();
         while (ifaces.hasMoreElements()) {
           NetworkInterface iface = ifaces.nextElement();
           if ("lo".equals(iface.getName())) continue;
-          Enumeration<InetAddress> addresses = iface.getInetAddresses();
-          while (addresses.hasMoreElements()) {
-            InetAddress addr = addresses.nextElement();
-            addrs.add(addr.getHostAddress());
-          }
+          addresses.addAll(Collections.list(iface.getInetAddresses()));
+        }
+        Collections.sort(addresses, new IpComparator());
+        for (InetAddress addr : addresses) {
+        	String addrStr = addr.getHostAddress().split("%")[0];        	
+        	if(addr instanceof Inet6Address){
+        		addrs.add("[" + addrStr + "]");
+        	} else {
+        		addrs.add(addrStr);
+        	}
         }
       } catch (SocketException e) {
         Debug.d("failed to get network interfaces");
@@ -172,5 +181,38 @@ public class WiFiKeyboard extends Activity {
       v.setText(msg);
       v.setTextSize(fontSize);
       layout.addView(v);
+    }
+}
+
+class IpComparator implements Comparator<InetAddress> {
+	@Override
+    public int compare(InetAddress adr1, InetAddress adr2) {
+        byte[] ba1 = adr1.getAddress();
+        byte[] ba2 = adr2.getAddress();
+ 
+        // general ordering: ipv4 before ipv6
+        if(ba1.length < ba2.length) return -1;
+        if(ba1.length > ba2.length) return 1;
+        
+        // general ordering: local before global
+		if(adr1.isSiteLocalAddress() && !adr2.isSiteLocalAddress()) return -1;
+		if(!adr1.isSiteLocalAddress() && adr2.isSiteLocalAddress()) return 1;
+ 
+        // we have 2 ips of the same type, so we have to compare each byte
+        for(int i = 0; i < ba1.length; i++) {
+            int b1 = unsignedByteToInt(ba1[i]);
+            int b2 = unsignedByteToInt(ba2[i]);
+            if(b1 == b2)
+                continue;
+            if(b1 < b2)
+                return -1;
+            else
+                return 1;
+        }
+        return 0;
+    }
+ 
+    private int unsignedByteToInt(byte b) {
+        return (int) b & 0xFF;
     }
 }
